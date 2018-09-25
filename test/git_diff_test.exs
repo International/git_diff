@@ -8,6 +8,12 @@ defmodule GitDiffTest do
     assert flag == :ok
   end
 
+  test "parse a valid diff containing new files" do
+    text = read!("test/new_file_diff.txt")
+    {flag, _} = GitDiff.parse_patch(text)
+    assert flag == :ok
+  end
+
   test "parse an invalid diff" do
     dir = "test/bad_diffs"
     Enum.each(ls!(dir), fn(file) ->

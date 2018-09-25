@@ -1,0 +1,17 @@
+diff --git a/x.rb b/x.rb
+new file mode 100644
+index 0000000..0646677
+--- /dev/null
++++ b/x.rb
+@@ -0,0 +1,11 @@
++def x(a1,a2,a3)
++  a={first:\"last\",
++     third: \"fourth\"
++  }
++end
++
++b = [1,2,3,4,
++     5,
++     6]
++
++str = \"this is a very very long string, and should trigger another deviation warning\"

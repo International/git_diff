@@ -1,11 +1,11 @@
 defmodule GitDiff do
   @moduledoc """
   A simple implementation for taking the output from 'git diff' and transforming it into Elixir structs.
-  
+
   ## Installation
-  
+
   The package can be installed by adding `git_diff` to your list of dependencies in `mix.exs`:
-  
+
   ```elixir
   def deps do
     [
@@ -13,9 +13,9 @@ defmodule GitDiff do
     ]
   end
   ```
-  
+
   ## Example
-  
+
   Output:
   ```
   [
@@ -44,25 +44,25 @@ defmodule GitDiff do
     to: "src/cursor.js"},
   ]
   ```
-  
+
   The above output is heavily truncated for illustration, but it should give enough of an idea of what to expect. The
   code, while naive, is less than 100 lines of actual code and all takes place in the GitDiff module. Emulate the tests
   in a an interactive shell for quick viewing of the output.
-  
+
   ## Benchmarks
-  
+
   Haven't done much benchmarking, but up to around a 5k (I just stopped trying there) line diff the performance was
   linear and took a whopping 35ms per call on the test VM. For a more reasonably sized ~150 line diff it clocked in at
   around 340 microseconds.
   """
-  
+
   alias GitDiff.Patch
   alias GitDiff.Chunk
   alias GitDiff.Line
 
   @doc """
   Parse the output from a 'git diff' command.
-  
+
   Returns `{:ok, [%GitDiff.Patch{}]}` for success, `{:error, :unrecognized_format}` otherwise. See `GitDiff.Patch`.
   """
   @spec parse_patch(String.t) :: {:ok, [%GitDiff.Patch{}]} | {:error, :unrecognized_format}
@@ -74,7 +74,7 @@ defmodule GitDiff do
         |> split_diffs()
         |> process_diffs()
         |> Enum.to_list()
-        
+
       if Enum.all?(parsed_diff, fn(%Patch{} = _patch) -> true; (_) -> false end) do
         {:ok, parsed_diff}
       else
@@ -84,27 +84,27 @@ defmodule GitDiff do
       _ -> {:error, :unrecognized_format}
     end
   end
-  
+
   defp process_diffs(diffs) do
     Stream.map(diffs, fn(diff) ->
       [headers | chunks] = split_diff(diff) |> Enum.to_list()
       patch = process_diff_headers(headers)
-      
+
       chunks =
         Enum.map(chunks, fn(lines) ->
           process_chunk(%{from_line_number: nil, to_line_number: nil}, %Chunk{}, lines)
         end)
-      
+
       %{patch | chunks: chunks}
     end)
   end
-  
+
   defp process_chunk(_, chunk, []) do
     %{chunk | lines: Enum.reverse(chunk.lines)}
   end
-  
+
   defp process_chunk(context, chunk, ["" |lines]), do: process_chunk(context, chunk, lines)
-  
+
   defp process_chunk(context, chunk, [line |lines]) do
     {context, chunk} =
       case line do
@@ -127,7 +127,7 @@ defmodule GitDiff do
               to_line_number: context.to_line_number,
               from_line_number: context.from_line_number
             }
-            
+
           {
             %{context | to_line_number: context.to_line_number + 1, from_line_number: context.from_line_number + 1},
             %{chunk | lines: [line | chunk.lines]}
@@ -139,7 +139,7 @@ defmodule GitDiff do
               type: :add,
               to_line_number: context.to_line_number
             }
-            
+
           {
             %{context | to_line_number: context.to_line_number + 1},
             %{chunk | lines: [line | chunk.lines]}
@@ -151,28 +151,30 @@ defmodule GitDiff do
               type: :remove,
               from_line_number: context.from_line_number
             }
-            
+
           {
             %{context | from_line_number: context.from_line_number + 1},
             %{chunk | lines: [line | chunk.lines]}
           }
+        "\\" <> _ ->
+          { context, chunk }
       end
-    
+
     process_chunk(context, chunk, lines)
   end
-  
+
   defp process_diff_headers([header | headers]) do
     [_ | [diff_type | _]] = String.split(header, " ")
-    
+
     if diff_type !== "--git" do
       raise "Invalid diff type"
     else
       process_diff_headers(%Patch{}, headers)
     end
   end
-  
+
   defp process_diff_headers(patch, []), do: patch
-  
+
   defp process_diff_headers(patch, [header | headers]) do
     patch =
       case header do
@@ -188,17 +190,22 @@ defmodule GitDiff do
         "dissimilarity index " <> number -> %{patch | headers: Map.put(patch.headers, "dissimilarity index", number)}
         "index " <> rest ->
           results = Regex.named_captures(~r/(?<first_hash>.+?)\.\.(?<second_hash>.+?) (?<mode>.+)/, rest)
-          
+
           %{patch | headers: Map.put(patch.headers, "index", {results["first_hash"], results["second_hash"], results["mode"]})}
         "--- a/" <> from -> %{patch | from: from}
         "+++ b/" <> to -> %{patch | to: to}
         "--- /dev/null" ->
           %{patch | from: nil}
+        "+++ /dev/null" ->
+          %{patch | to: nil}
+        _ ->
+          # IO.inspect(header, label: "cannot handle header")
+          patch
       end
-    
+
     process_diff_headers(patch, headers)
   end
-  
+
   defp split_diff(diff) do
     chunk_fun =
       fn line, lines ->
@@ -208,16 +215,16 @@ defmodule GitDiff do
           {:cont, [line | lines]}
         end
        end
-       
+
     after_fun =
       fn
         [] -> {:cont, []}
         lines -> {:cont, Enum.reverse(lines), []}
       end
-    
+
     Stream.chunk_while(diff, [], chunk_fun, after_fun)
   end
-  
+
   defp split_diffs(split_diff) do
     chunk_fun =
       fn line, lines ->
@@ -227,13 +234,13 @@ defmodule GitDiff do
           {:cont, [line | lines]}
         end
        end
-       
+
     after_fun =
       fn
         [] -> {:cont, []}
         lines -> {:cont, Enum.reverse(lines), []}
       end
-    
+
     Stream.chunk_while(split_diff, [], chunk_fun, after_fun)
   end
 end

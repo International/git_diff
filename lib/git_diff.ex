@@ -81,7 +81,10 @@ defmodule GitDiff do
         {:error, :unrecognized_format}
       end
     rescue
-      _ -> {:error, :unrecognized_format}
+      _e -> 
+        # IO.inspect e
+        # IO.inspect System.stacktrace
+        {:error, :unrecognized_format}
     end
   end
 
@@ -164,12 +167,18 @@ defmodule GitDiff do
   end
 
   defp process_diff_headers([header | headers]) do
-    [_ | [diff_type | _]] = String.split(header, " ")
+    [_ | [diff_type, b1, b2 | _]] = String.split(header, " ")
+    [branch1 | _] = String.split(b1, "/")
+    [branch2 | _] = String.split(b2, "/")
+
+    if branch1 == "" || branch2 == "" do
+      raise "Invalid branch name"
+    end
 
     if diff_type !== "--git" do
       raise "Invalid diff type"
     else
-      process_diff_headers(%Patch{}, headers)
+      process_diff_headers(%Patch{branch1: branch1, branch2: branch2}, headers)
     end
   end
 
@@ -192,15 +201,25 @@ defmodule GitDiff do
           results = Regex.named_captures(~r/(?<first_hash>.+?)\.\.(?<second_hash>.+?) (?<mode>.+)/, rest)
 
           %{patch | headers: Map.put(patch.headers, "index", {results["first_hash"], results["second_hash"], results["mode"]})}
-        "--- a/" <> from -> %{patch | from: from}
-        "+++ b/" <> to -> %{patch | to: to}
         "--- /dev/null" ->
           %{patch | from: nil}
         "+++ /dev/null" ->
           %{patch | to: nil}
-        _ ->
-          # IO.inspect(header, label: "cannot handle header")
-          patch
+        "--- " <> path -> 
+          [first, from] = String.split(path, "/", parts: 2)
+          if first == "" do
+            raise "Invalid deletion"
+          end
+          if first != patch.branch1 && first != patch.branch2 do
+            raise "Invalid branch #{first} for file, expected #{patch.branch1} or #{patch.branch2}"
+          end
+          %{patch | from: from}
+        "+++ " <> path  -> 
+          [first, to] = String.split(path, "/", parts: 2)
+          if first == "" do
+            raise "Invalid deletion"
+          end
+          %{patch | to: to}
       end
 
     process_diff_headers(patch, headers)
